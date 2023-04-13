@@ -20,6 +20,14 @@ Command : “STAR --genomeDir _directory to reference genome_ --readFilesIn _dir
 
 In this case, directory to reference genome is : “/home/ehyang4/ncbi_dataset/data”
 
+**How to Use My Program**
+1. Unzip all files into .fastq format
+2. Open terminal and cd to afolder with all the fastq files
+3. Activate cutadapt env
+4. Start Python in terminal via "python" 
+5. Copy and paste the _#finished loop program_ from the jupyter notebook into terminal
+6. Run it and it should begin processing all the fastq files in the folder and store them into an output folder automatically
+
 
 
 
