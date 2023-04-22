@@ -29,6 +29,7 @@ In this case, directory to reference genome is : “/home/ehyang4/ncbi_dataset/d
 6. Run it and it should begin processing all the fastq files in the folder and store them into an output folder automatically
 
 
-
+Reference Genomes
+1. https://www.nature.com/articles/s41437-018-0090-1- says to use OAR 3.1 for miRNA
 
 
