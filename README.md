@@ -6,7 +6,7 @@ Documentation
 **How to Use STAR General Instructions**
 1. Install trimgalore, fastqc, star,cutadapt
 2. Download sheep reference genome from Ensembl database: https://www.ncbi.nlm.nih.gov/data-hub/genome/GCF_000298735.2/ 
-Note: This can be any reference genome
+Note: This can be any reference genome, also download the annotation files in GTF format
 3. Activate cutadapt env : “conda activate cutadaptenv”
 4. Run a quality control : “fastqc input.fastq”
 5. Trim adapters and low quality bases from the input fastq file : “trim_galore  --quality 20 --fastqc --illumina input.fastq”
