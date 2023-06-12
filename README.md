@@ -16,6 +16,7 @@ Note : Files with “.fna” may need to be renamed to “.fa”
 Note : Better to use full directories rather than abbreviated ones
 Command : “STAR --runThreadN 48 -- runMode genomeGenerate --genomeDir genomeDirectory --genomeFastaFiles _directory to fasta file(s)_ --sjdbGTFfile _directory to genome GTF file_" 
 Note : Only needs to be done once
+
 7. Use STAR to align genome to reference genome
 Command : “STAR --genomeDir _directory to reference genome_ --readFilesIn _directory to fastq files_ --quantMode GeneCounts”
 
