@@ -10,7 +10,8 @@ Note: This can be any reference genome, also download the annotation files in GT
 3. Activate cutadapt env : “conda activate cutadaptenv”
 4. Run a quality control : “fastqc input.fastq”
 5. Trim adapters and low quality bases from the input fastq file : “trim_galore  --quality 20 --fastqc --illumina input.fastq”
-6. Generate reference genome index file
+6. Generate reference genome index file (Use GCF ones)
+
 Note : Files with “.fna” may need to be renamed to “.fa”
 Note : Better to use full directories rather than abbreviated ones
 Command : “STAR --runThreadN 48 -- runMode genomeGenerate --genomeDir genomeDirectory --genomeFastaFiles _directory to fasta file(s)_ --sjdbGTFfile _directory to genome GTF file_" 
