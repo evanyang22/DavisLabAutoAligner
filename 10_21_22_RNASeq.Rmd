@@ -1,0 +1,176 @@
+---
+title: "10_21_22_RNASeq"
+author: "Evan"
+date: '2022-10-17'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Reading in Data
+In this section, we read in mRNA data collected from GEO on exosomes from mesemchymal stem cells, cardiosphere-derived cells, and endothelial progenitor cells. Additionally, we use HLHS CPC-EV data from the Davis Lab. Finally, we clean it 
+
+#### Mesenchymal Stem Cells- total RNA data
+From here:
+https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE138435
+```{r}
+library(limma)
+library(Glimma)
+library(edgeR)
+library(readxl)
+library(tidyverse)
+library(readxl)
+
+MSCData<- read_excel("MSC_Total_RNA_EV.xlsx")
+cleanMSCData<-MSCData[,-1]
+cleanMSCData <- apply(cleanMSCData,MARGIN=c(1,2) ,as.numeric)#forcing into numerics from characters
+row.names(cleanMSCData) <- MSCData[[1]]
+cleanMSCData<-cleanMSCData[apply(cleanMSCData == 0, 1, sum) <= ncol(cleanMSCData)/2, ]#removing more than 50% zeros
+
+#creating DGEList-Object
+MSCDGE<-DGEList(counts=cleanMSCData)
+
+#adding in group data
+group <- as.factor(c("MSC","MSC","MSC","MSC","MSC","MSC"))
+MSCDGE$samples$group <- group
+
+```
+
+#### Reading in HLHS CPC-EV Data from Davis Lab
+
+```{r}
+library(readr,dplyr)
+#reading in csv data and converting to matrix
+DavisEV<-read.csv("TotalRNA_counts_EV.csv", header = TRUE)%>%
+  column_to_rownames(var="X")
+
+#selecting proper samples
+DavisEV<-select(as.data.frame(DavisEV),c("E1101","E1102","E1103","E1104","E1105","E1106","E1107"))
+
+#removing all columns with less than 50% zeroes
+DavisEV<-DavisEV[apply(DavisEV == 0, 1, sum) <= ncol(DavisEV)/2, ]
+
+
+
+DavisDGE<-DGEList(counts=DavisEV)
+#grouping annotations
+group <- as.factor(c("HLHS_CPC-EV"))
+DavisDGE$samples$group <- group
+```
+
+#### Reading in Endothelial Progenitor Cells mi-RNA
+From this: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE124692
+Note- we used miRNA count data at the link above
+
+```{r}
+EPCmiRNAData<- read_excel("EPC_Total_RNA_EV.xlsx")
+EPCmiRNAData<- EPCmiRNAData[,colnames(EPCmiRNAData)!="miRNApreName"]
+EPCmiRNAData<- EPCmiRNAData[,colnames(EPCmiRNAData)!="mirSequence"]
+
+row.names(EPCmiRNAData) <- EPCmiRNAData[[1]]
+EPCmiRNAData<- EPCmiRNAData[,colnames(EPCmiRNAData)!="miRNAName"]
+
+#removing all columns with less than 50% zeroes
+EPCmiRNAData<-EPCmiRNAData[apply(EPCmiRNAData == 0, 1, sum) <= ncol(EPCmiRNAData)/2, ]
+
+EPCmiRNADGE<-DGEList(counts=EPCmiRNAData)
+
+#grouping annotations
+group <- as.factor(c("miRNA-EPC-EV"))
+EPCmiRNADGE$samples$group <- group
+```
+
+
+
+## Merging Datasets
+
+```{r}
+mergedData<-merge(DavisDGE$counts,MSCDGE$counts,by=0)
+
+
+cleanMergedDF <- mergedData[,-1]
+rownames(cleanMergedDF) <- mergedData[,1]
+
+mergedMatrix<-data.matrix(cleanMergedDF)
+mergedDGE<-DGEList(counts<-mergedMatrix)
+
+#adding group annotations
+group <- as.factor(rep(c("HLHS_CPC","MSC"), c(7,6)))
+mergedDGE$samples$group<-group
+
+#adding in gene annotations
+library(Homo.sapiens)
+geneid <- rownames(mergedDGE)
+genes <- select(Homo.sapiens, keys=geneid, columns=c("ENTREZID", "TXCHROM"), keytype="SYMBOL")
+
+```
+
+```{r}
+genes <- genes[!duplicated(genes$SYMBOL),]
+mergedDGE$genes <- genes
+
+```
+
+
+## Analyzing mergedDGE
+```{r}
+#view(mergedDGE)
+mergedDGE$samples
+#cpm and lcpm values
+cpm<-cpm(mergedDGE)
+lcpm<-cpm(mergedDGE,log=TRUE)
+#L and M values
+L <- mean(mergedDGE$samples$lib.size) * 1e-6
+M <- median(mergedDGE$samples$lib.size) * 1e-6
+c(L, M)
+```
+
+
+
+#### Removing Genes that are Lowly Expressed
+
+```{r}
+samplenames<-colnames(mergedDGE)
+keep.exprs <- filterByExpr(mergedDGE, group=group)
+mergedDGE <- mergedDGE[keep.exprs,, keep.lib.sizes=FALSE]
+dim(mergedDGE)
+```
+
+
+```{r}
+lcpm.cutoff <- log2(10/M + 2/L)
+library(RColorBrewer)
+nsamples <- ncol(mergedDGE)
+col <- brewer.pal(nsamples, "Paired")
+par(mfrow=c(1,2))
+plot(density(lcpm[,1]), col=col[1], lwd=2, ylim=c(0,0.26), las=2, main="", xlab="")
+title(main="A. Raw data", xlab="Log-cpm")
+abline(v=lcpm.cutoff, lty=3)
+for (i in 2:nsamples){
+den <- density(lcpm[,i])
+lines(den$x, den$y, col=col[i], lwd=2)
+}
+legend("topright", samplenames, text.col=col, bty="n")
+lcpm <- cpm(mergedDGE, log=TRUE)
+plot(density(lcpm[,1]), col=col[1], lwd=2, ylim=c(0,0.26), las=2, main="", xlab="")
+title(main="B. Filtered data", xlab="Log-cpm")
+abline(v=lcpm.cutoff, lty=3)
+for (i in 2:nsamples){
+den <- density(lcpm[,i])
+lines(den$x, den$y, col=col[i], lwd=2)
+}
+legend("topright", samplenames, text.col=col, bty="n")
+```
+
+
+#### Normalizing Gene Expression
+
+```{r}
+mergedDGE <- calcNormFactors(mergedDGE, method = "TMM")
+mergedDGE$samples$norm.factors
+lcpm <- cpm(mergedDGE, log=TRUE)
+boxplot(lcpm, las=2, col=col, main="")
+title(main="Boxplot for Data",ylab="Log-cpm")
+```

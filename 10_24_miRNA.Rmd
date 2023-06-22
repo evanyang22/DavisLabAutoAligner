@@ -1,0 +1,347 @@
+---
+title: "miRNA-Analysis"
+author: "Evan"
+date: '2022-10-24'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Reading in Data
+
+#### Reading in HLHS-CPC EV miRNA Data from Davis Lab
+```{r}
+library(limma)
+library(Glimma)
+library(edgeR)
+library(readxl)
+library(tidyverse)
+library(readxl)
+library(readr)
+library(dplyr)
+#reading in csv data and converting to matrix
+DavisEV<-read.csv("miRNA_counts_EV.csv", header = TRUE)%>%
+  column_to_rownames(var="X")
+
+#selecting proper samples
+DavisEV<-dplyr::select(as.data.frame(DavisEV),c("E1101","E1102","E1103","E1104","E1105","E1106","E1107"))
+
+#removing all columns with less than 50% zeroes
+DavisEV<-DavisEV[apply(DavisEV == 0, 1, sum) <= ncol(DavisEV)/2, ]
+
+DavisEV<-na.omit(DavisEV)
+DavisDGE<-DGEList(counts=DavisEV)
+#grouping annotations
+group <- as.factor(c("HLHS_CPC-EV"))
+DavisDGE$samples$group <- group
+
+
+```
+
+#### Reading in Endothelial Progenitor Cells EV mi-RNA Data
+From this: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE124692
+Note- we used miRNA count data at the link above
+
+```{r}
+EPCmiRNAData<- read_excel("miRNA_EPC.xlsx")
+EPCmiRNAData<- EPCmiRNAData[,colnames(EPCmiRNAData)!="miRNApreName"]
+EPCmiRNAData<- EPCmiRNAData[,colnames(EPCmiRNAData)!="mirSequence"]
+EPCData<- as.data.frame(EPCmiRNAData)
+rownames(EPCData)<- EPCData[,1]
+EPCData= EPCData[,-1]
+
+
+EPCData<-EPCData[apply(EPCData == 0, 1, sum) <= ncol(EPCData)/2, ]
+
+EPCDGE<-DGEList(counts=EPCData)
+
+#grouping annotations
+group <- as.factor(c("miRNA-EPC-EV"))
+EPCDGE$samples$group <- group
+
+
+```
+
+
+#### Reading in MSC-EV miRNA Data
+https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE159814 
+
+```{r}
+MSCData<- read_excel("GSE159814_miRNA_readscount.xlsx")
+MSCData<-as.data.frame(MSCData)
+rownames(MSCData)<- MSCData[,1]
+MSCData= MSCData[,-1]
+
+MSCDGE<-DGEList(counts=MSCData)
+#grouping annotations
+group <- as.factor(c("miRNA-MSC-EV"))
+MSCDGE$samples$group <- group
+
+
+```
+
+
+#### Merging All Datasets
+
+```{r}
+
+mergeEPC<-merge(DavisDGE$counts,EPCDGE$counts,by=0)
+
+mergeMSC<-merge(DavisDGE$counts,MSCDGE$counts,by=0)
+
+#mergedData<-merge(merge1,MSCDGE$counts,by=0)
+
+#view(merge1)
+#view(MSCDGE$counts)
+#view(mergedData)
+
+
+```
+## Analyzing mergeEPC and generating top table
+
+```{r}
+cleanMergedEPCDF <- mergeEPC[,-1]
+rownames(cleanMergedEPCDF) <- mergeEPC[,1]
+
+mergedEPCMatrix<-data.matrix(cleanMergedEPCDF)
+
+mergedEPCDGE<-DGEList(counts=mergedEPCMatrix)
+
+#adding gene annotations
+group <- as.factor(rep(c("HLHS_CPC","EPC"), c(7,4)))
+mergedEPCDGE$samples$group<-group
+
+#Analysis
+cpm<-cpm(mergedEPCDGE)
+lcpm<-cpm(mergedEPCDGE,log=TRUE)
+#L and M values
+L <- mean(mergedEPCDGE$samples$lib.size) * 1e-6
+M <- median(mergedEPCDGE$samples$lib.size) * 1e-6
+c(L, M)
+
+#removing lowly expressed genes
+samplenames<-colnames(mergedEPCDGE)
+keep.exprs <- filterByExpr(mergedEPCDGE, group=group)
+mergedEPCDGE <- mergedEPCDGE[keep.exprs,, keep.lib.sizes=FALSE]
+dim(mergedEPCDGE)
+
+
+```
+
+```{r}
+#QC1
+lcpm.cutoff <- log2(10/M + 2/L)
+library(RColorBrewer)
+nsamples <- ncol(mergedEPCDGE)
+col <- brewer.pal(nsamples, "Paired")
+par(mfrow=c(1,2))
+plot(density(lcpm[,1]), col=col[1], lwd=2, ylim=c(0,0.26), las=2, main="", xlab="")
+title(main="A. Raw data", xlab="Log-cpm")
+abline(v=lcpm.cutoff, lty=3)
+for (i in 2:nsamples){
+den <- density(lcpm[,i])
+lines(den$x, den$y, col=col[i], lwd=2)
+}
+legend("topright", samplenames, text.col=col, bty="n")
+lcpm <- cpm(mergedEPCDGE, log=TRUE)
+plot(density(lcpm[,1]), col=col[1], lwd=2, ylim=c(0,0.26), las=2, main="", xlab="")
+title(main="B. Filtered data", xlab="Log-cpm")
+abline(v=lcpm.cutoff, lty=3)
+for (i in 2:nsamples){
+den <- density(lcpm[,i])
+lines(den$x, den$y, col=col[i], lwd=2)
+}
+legend("topright", samplenames, text.col=col, bty="n")
+
+
+```
+```{r}
+mergedEPCDGE <- calcNormFactors(mergedEPCDGE, method = "TMM")
+mergedEPCDGE$samples$norm.factors
+lcpm <- cpm(mergedEPCDGE, log=TRUE)
+boxplot(lcpm, las=2, col=col, main="")
+title(main="Boxplot for Data",ylab="Log-cpm")
+
+```
+```{r}
+#QC3
+lcpm <- cpm(mergedEPCDGE, log=TRUE)
+par(mfrow=c(1,2))
+col.group <- group
+levels(col.group) <-  brewer.pal(nlevels(col.group), "Set1")
+col.group <- as.character(col.group)
+
+plotMDS(lcpm, labels=group, col=col.group)
+title(main="A. Sample groups")
+
+```
+## Differential Expression Analysis for EPC vs HLHS CPC
+```{r}
+design <- model.matrix(~0+group)
+colnames(design) <- gsub("group", "", colnames(design))
+design
+
+v <- voom(mergedEPCDGE, design, plot=TRUE)
+v
+
+contr.matrix <- makeContrasts(
+   HLHS_CPC=HLHS_CPC, 
+   EPC=EPC,
+   levels = colnames(design))
+contr.matrix
+
+vfit <- lmFit(v, design)
+vfit <- contrasts.fit(vfit, contrasts=contr.matrix)
+efit <- eBayes(vfit)
+plotSA(efit, main="Final model: Mean-variance trend")
+
+summary(decideTests(efit))
+#the below method is stricter in terms of decisions
+tfit <- treat(vfit, lfc=1)
+dt <- decideTests(tfit)
+summary(dt)
+
+```
+```{r}
+export <- topTreat(tfit,coef=1,n=Inf)
+export<-filter(as.data.frame(export),export$adj.P.Val<0.01)
+export<-cbind(rownames(export),export)
+view(export)
+```
+```{r}
+library("writexl")
+write_xlsx(export,"HLHS-CPC_vs_EPC.xlsx")
+```
+
+#### Analyzing mergeMSC and generating top table
+
+```{r}
+cleanMergedMSCDF <- mergeMSC[,-1]
+rownames(cleanMergedMSCDF) <- mergeMSC[,1]
+
+mergedMSCMatrix<-data.matrix(cleanMergedMSCDF)
+
+mergedMSCDGE<-DGEList(counts=mergedMSCMatrix)
+
+#adding gene annotations
+group <- as.factor(rep(c("HLHS_CPC","MSC"), c(7,3)))
+mergedMSCDGE$samples$group<-group
+
+#Analysis
+cpm<-cpm(mergedMSCDGE)
+lcpm<-cpm(mergedMSCDGE,log=TRUE)
+#L and M values
+L <- mean(mergedMSCDGE$samples$lib.size) * 1e-6
+M <- median(mergedMSCDGE$samples$lib.size) * 1e-6
+c(L, M)
+
+#removing lowly expressed genes
+samplenames<-colnames(mergedMSCDGE)
+keep.exprs <- filterByExpr(mergedMSCDGE, group=group)
+mergedMSCDGE <- mergedMSCDGE[keep.exprs,, keep.lib.sizes=FALSE]
+dim(mergedMSCDGE)
+
+
+```
+
+```{r}
+#QC1
+lcpm.cutoff <- log2(10/M + 2/L)
+library(RColorBrewer)
+nsamples <- ncol(mergedMSCDGE)
+col <- brewer.pal(nsamples, "Paired")
+par(mfrow=c(1,2))
+plot(density(lcpm[,1]), col=col[1], lwd=2, ylim=c(0,0.26), las=2, main="", xlab="")
+title(main="A. Raw data", xlab="Log-cpm")
+abline(v=lcpm.cutoff, lty=3)
+for (i in 2:nsamples){
+den <- density(lcpm[,i])
+lines(den$x, den$y, col=col[i], lwd=2)
+}
+legend("topright", samplenames, text.col=col, bty="n")
+lcpm <- cpm(mergedMSCDGE, log=TRUE)
+plot(density(lcpm[,1]), col=col[1], lwd=2, ylim=c(0,0.26), las=2, main="", xlab="")
+title(main="B. Filtered data", xlab="Log-cpm")
+abline(v=lcpm.cutoff, lty=3)
+for (i in 2:nsamples){
+den <- density(lcpm[,i])
+lines(den$x, den$y, col=col[i], lwd=2)
+}
+legend("topright", samplenames, text.col=col, bty="n")
+
+
+```
+
+```{r}
+mergedMSCDGE <- calcNormFactors(mergedMSCDGE, method = "TMM")
+mergedMSCDGE$samples$norm.factors
+lcpm <- cpm(mergedMSCDGE, log=TRUE)
+boxplot(lcpm, las=2, col=col, main="")
+title(main="Boxplot for Data",ylab="Log-cpm")
+
+```
+```{r}
+#QC3
+lcpm <- cpm(mergedMSCDGE, log=TRUE)
+par(mfrow=c(1,2))
+col.group <- group
+levels(col.group) <-  brewer.pal(nlevels(col.group), "Set1")
+col.group <- as.character(col.group)
+
+plotMDS(lcpm, labels=group, col=col.group)
+title(main="A. Sample groups")
+
+```
+## Differential Expression Analysis for MSC vs HLHS CPC
+```{r}
+design <- model.matrix(~0+group)
+colnames(design) <- gsub("group", "", colnames(design))
+design
+
+v <- voom(mergedMSCDGE, design, plot=TRUE)
+v
+
+contr.matrix <- makeContrasts(
+   HLHS_CPC=HLHS_CPC, 
+   MSC=MSC,
+   levels = colnames(design))
+contr.matrix
+
+vfit <- lmFit(v, design)
+vfit <- contrasts.fit(vfit, contrasts=contr.matrix)
+efit <- eBayes(vfit)
+plotSA(efit, main="Final model: Mean-variance trend")
+
+summary(decideTests(efit))
+#the below method is stricter in terms of decisions
+tfit <- treat(vfit, lfc=1)
+dt <- decideTests(tfit)
+summary(dt)
+
+```
+```{r}
+export <- topTreat(tfit,coef=1,n=Inf)
+export<-filter(as.data.frame(export),export$adj.P.Val<0.01)
+export<-cbind(rownames(export),export)
+view(export)
+```
+```{r}
+library("writexl")
+write_xlsx(export,"HLHS-CPC_vs_MSC.xlsx")
+```
+
+
+#### Ignore Below
+```{r}
+#put all data frames into list
+df_list <- list(DavisDGE$counts, EPCDGE$counts, MSCDGE$counts)
+
+#merge all data frames in list
+#Reduce(function(x, y) merge(x, y, all=TRUE), df_list)
+
+#merge all data frames in list
+df_list %>% reduce(full_join, by='variable_name')
+
+```
