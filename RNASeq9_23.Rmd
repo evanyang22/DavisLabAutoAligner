@@ -1,0 +1,79 @@
+---
+title: "RNASeq"
+author: "Evan"
+date: '2022-09-23'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Creating DGEList Objects From Data
+In this section, we create DGEList Objects from both the CPC Data and the Davis Lab data.
+
+#### Reading in CPC Data
+```{r}
+library(limma)
+library(Glimma)
+library(edgeR)
+library(readxl)
+library(tidyverse)
+
+library(readxl)
+#goal- create DGEList object from excel
+CPCData<- read_excel("CDCData.xlsx", sheet= "UntransposedRawData")
+CPCData<-t(CPCData)#transposing data
+colnames(CPCData)<- CPCData[2,]#renaming column names 
+#data cleaning
+CPCData <- CPCData[-1, ]
+CPCData <- CPCData[-1, ]
+drop <- c("Gene Name")
+CPCData <- CPCData[,!(colnames(CPCData) %in% drop)]
+CPCData <- apply(CPCData,MARGIN=c(1,2) ,as.numeric)#forcing into numerics from characters
+CPCData<- t(CPCData) #retransposing data so rows are genes and columns are samples
+yCDCData<-select(as.data.frame(CPCData),contains("yCDC"))
+#removing all columns with less than 50% zeroes
+yCDCData<-yCDCData[apply(yCDCData == 0, 1, sum) <= ncol(yCDCData)/2, ]
+
+yCDCDGE<-DGEList(counts=yCDCData)
+
+
+#modifying and adding to data
+group <- as.factor(c("yCDC","yCDC","yCDC","yCDC","yCDC"))
+yCDCDGE$samples$group <- group
+```
+
+#### Adding in Data from Davis Lab
+
+```{r}
+
+library(readr,dplyr)
+#reading in csv data and converting to matrix
+DavisCell<-read.csv("TotalRNA_counts_cell.csv", header = TRUE)%>%
+  column_to_rownames(var="X")
+
+#selecting proper samples
+DavisCell<-select(as.data.frame(DavisCell),c("C1102","C1103","C1104","C1105","C1106","C1107"))
+#removing all columns with less than 50% zeroes
+DavisCell<-DavisCell[apply(DavisCell == 0, 1, sum) <= ncol(DavisCell)/2, ]
+
+
+
+DCDGE<-DGEList(counts=DavisCell)
+
+group <- as.factor(c("DavisCell"))
+DCDGE$samples$group <- group
+#row names seem to be fine, using rownames(DCDGE)
+```
+
+#### Merging Two Datasets 
+After normalizing the two datasets by creating DGEList Objects from both Davis Cell and yCDC data, we merge them together.
+
+```{r}
+#this step is very slow, like extremely slow, doesn't have enough memory
+#look into cpu server
+mergedData<-merge(DCDGE$counts,yCDCDGE$counts)
+view(mergedData)
+```
+
